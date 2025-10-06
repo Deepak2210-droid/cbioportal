@@ -37,6 +37,8 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
@@ -96,18 +98,66 @@ public class LegacyProxyController {
     pathToUrl.put("bitly", bitlyURL);
     pathToUrl.put("3dHotspots", "https://www.3dhotspots.org/api/hotspots/3d/");
 
-    String URL = pathToUrl.get(path) == null ? "" : pathToUrl.get(path);
+    // Validate path strictly: only allow exact keys in pathToUrl
+    if (!pathToUrl.containsKey(path)) {
+      response.sendError(400, "Invalid proxy path.");
+      return "";
+    }
+
+    String baseUrl = pathToUrl.get(path);
 
     if (path != null && StringUtils.startsWithIgnoreCase(path, "oncokb") && !enableOncokb) {
       response.sendError(403, "OncoKB service is disabled.");
       return "";
     }
 
-    // If request method is GET, include query string
+    // Validate and sanitize query parameters
+    String sanitizedQuery = null;
     if (method.equals(HttpMethod.GET) && request.getQueryString() != null) {
-      URL += "?" + request.getQueryString();
+      sanitizedQuery = sanitizeQueryString(request.getQueryString());
     }
+
+    String URL = baseUrl;
+    if (sanitizedQuery != null && !sanitizedQuery.isEmpty()) {
+      URL += "?" + sanitizedQuery;
+    }
+
     return respProxy(URL, method, body, response);
+  }
+
+  private String sanitizeQueryString(String query) throws IOException {
+    // Allow only alphanumeric, underscore, dash, dot, equal sign and ampersand
+    // Decode first to avoid double encoding attacks
+    String decodedQuery = URLDecoder.decode(query, StandardCharsets.UTF_8.name());
+
+    // Split parameters and filter by whitelist
+    StringBuilder sanitized = new StringBuilder();
+    String[] params = decodedQuery.split("&");
+
+    // Define whitelist of allowed parameter names (example: allow all alphanumeric keys)
+    for (String param : params) {
+      if (param.isEmpty()) {
+        continue;
+      }
+      String[] kv = param.split("=", 2);
+      String key = kv[0];
+      String value = kv.length > 1 ? kv[1] : "";
+
+      // Only allow keys with alphanumeric, underscore, dash
+      if (!key.matches("[a-zA-Z0-9_\-]+")) {
+        continue; // skip disallowed keys
+      }
+
+      // Escape value by URL encoding
+      String encodedValue = java.net.URLEncoder.encode(value, StandardCharsets.UTF_8.name());
+
+      if (sanitized.length() > 0) {
+        sanitized.append("&");
+      }
+      sanitized.append(key).append("=").append(encodedValue);
+    }
+
+    return sanitized.toString();
   }
 
   private String respProxy(String url, HttpMethod method, Object body, HttpServletResponse response)
@@ -129,6 +179,14 @@ public class LegacyProxyController {
   public @ResponseBody String getBitlyURL(
       HttpMethod method, HttpServletRequest request, HttpServletResponse response)
       throws URISyntaxException, IOException {
-    return respProxy(bitlyURL + request.getQueryString(), method, null, response);
+    String sanitizedQuery = "";
+    if (request.getQueryString() != null) {
+      sanitizedQuery = sanitizeQueryString(request.getQueryString());
+    }
+    String url = bitlyURL;
+    if (!sanitizedQuery.isEmpty()) {
+      url += "?" + sanitizedQuery;
+    }
+    return respProxy(url, method, null, response);
   }
 }
