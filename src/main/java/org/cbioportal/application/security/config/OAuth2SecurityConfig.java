@@ -49,7 +49,8 @@ public class OAuth2SecurityConfig {
   public SecurityFilterChain filterChain(
       HttpSecurity http, ClientRegistrationRepository clientRegistrationRepository)
       throws Exception {
-    http.csrf(AbstractHttpConfigurer::disable)
+    http
+        .csrf(csrf -> csrf.csrfTokenRepository(org.springframework.security.web.csrf.CookieCsrfTokenRepository.withHttpOnlyFalse()))
         .cors(Customizer.withDefaults())
         .authorizeHttpRequests(
             authorize ->
