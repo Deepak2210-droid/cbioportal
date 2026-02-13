@@ -1,5 +1,8 @@
 package org.cbioportal.application.security.config;
 
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.util.ArrayList;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -17,7 +20,16 @@ public class CorsConfig {
 
   @Bean
   CorsConfigurationSource corsConfigurationSource() {
-    List<String> parsedAllowedOrigins = List.of(allowedOrigins.split(","));
+    List<String> parsedAllowedOrigins = new ArrayList<>();
+    if (allowedOrigins != null && !allowedOrigins.isBlank()) {
+      for (String origin : allowedOrigins.split(",")) {
+        origin = origin.trim();
+        if (!origin.isEmpty() && isValidOrigin(origin)) {
+          parsedAllowedOrigins.add(origin);
+        }
+      }
+    }
+
     UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
     if (parsedAllowedOrigins.isEmpty()) {
       return source;
@@ -41,5 +53,27 @@ public class CorsConfig {
     configuration.setExposedHeaders(List.of("total-count", "sample-count", "elapsed-time"));
     source.registerCorsConfiguration("/**", configuration);
     return source;
+  }
+
+  private boolean isValidOrigin(String origin) {
+    try {
+      URI uri = new URI(origin);
+      String scheme = uri.getScheme();
+      if (scheme == null) {
+        return false;
+      }
+      scheme = scheme.toLowerCase();
+      if (!scheme.equals("http") && !scheme.equals("https")) {
+        return false;
+      }
+      String host = uri.getHost();
+      if (host == null || host.isEmpty()) {
+        return false;
+      }
+      // Additional checks can be added here if needed (e.g., whitelist)
+      return true;
+    } catch (URISyntaxException e) {
+      return false;
+    }
   }
 }
