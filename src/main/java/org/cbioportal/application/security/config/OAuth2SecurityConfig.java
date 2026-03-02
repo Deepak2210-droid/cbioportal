@@ -94,12 +94,25 @@ public class OAuth2SecurityConfig {
               default -> log.debug("Unsupported UserAuthority Type {}", authority);
             }
             if (!claims.isEmpty()) {
-              var roles =
-                  claims.stream()
-                      .filter(claim -> !Objects.isNull(claim))
-                      .map(claim -> ClaimRoleExtractorUtil.extractClientRoles(claim, jwtRolesPath))
-                      .flatMap(Collection::stream)
-                      .collect(Collectors.toSet());
+              var roles = claims.stream()
+                  .filter(Objects::nonNull)
+                  .map(claim -> {
+                    // Validate and sanitize roles path and claim structure
+                    if (claim == null || jwtRolesPath == null || jwtRolesPath.isBlank()) {
+                      return Set.<String>of();
+                    }
+                    // Defensive extraction with validation
+                    Set<String> extractedRoles = ClaimRoleExtractorUtil.extractClientRoles(claim, jwtRolesPath);
+                    if (extractedRoles == null) {
+                      return Set.<String>of();
+                    }
+                    // Filter roles to allow only roles matching expected pattern (e.g., alphanumeric and underscore)
+                    return extractedRoles.stream()
+                        .filter(role -> role != null && role.matches("^[a-zA-Z0-9_\\-]+$"))
+                        .collect(Collectors.toSet());
+                  })
+                  .flatMap(Collection::stream)
+                  .collect(Collectors.toSet());
 
               mappedAuthorities.addAll(
                   GrantedAuthorityUtil.generateGrantedAuthoritiesFromRoles(roles));
